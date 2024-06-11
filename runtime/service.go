@@ -374,10 +374,15 @@ func (s *service) StartShim(shimCtx context.Context, opts shim.StartOpts) (strin
 	}
 
 	fcControlClient := fccontrolTtrpc.NewFirecrackerClient(ttrpcClient)
+	driveMountPtrs := make([]*proto.FirecrackerDriveMount, len(s.config.DriveMounts))
+	for i := range s.config.DriveMounts {
+		driveMountPtrs[i] = &s.config.DriveMounts[i]
+	}
 	_, err = fcControlClient.CreateVM(shimCtx, &proto.CreateVMRequest{
 		VMID:                     s.vmID,
 		ExitAfterAllTasksDeleted: exitAfterAllTasksDeleted,
 		ContainerCount:           int32(containerCount),
+		DriveMounts:              driveMountPtrs,
 	})
 	if err != nil {
 		errStatus, ok := status.FromError(err)
