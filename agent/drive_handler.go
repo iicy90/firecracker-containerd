@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"slices"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
@@ -184,6 +185,24 @@ func (dh driveHandler) MountDrive(ctx context.Context, req *drivemount.MountDriv
 		return nil, fmt.Errorf("failed to create drive mount destination %q: %w", req.DestinationPath, err)
 	}
 
+	if slices.Contains(req.Options, "_rw_overlay") {
+		os.MkdirAll(filepath.Join("/_overlay", drive.Path()), 0700)
+
+		err := mount.All([]mount.Mount{{
+			Source:  filepath.Join("/_overlay", drive.Path()),
+			Type:    "tmpfs",
+			Options: []string{"mode=1777"},
+		}}, filepath.Join("/_overlay", drive.Path()))
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to create drive mount destination %q: %w", req.DestinationPath, err)
+		}
+
+		os.MkdirAll(filepath.Join("/_overlay", drive.Path(), "lower"), 0700)
+		os.MkdirAll(filepath.Join("/_overlay", drive.Path(), "upper"), 0700)
+		os.MkdirAll(filepath.Join("/_overlay", drive.Path(), "work"), 0700)
+	}
+
 	// Retry the mount in the case of failure a fixed number of times. This works around a rare issue
 	// where we get to this mount attempt before the guest OS has realized a drive was patched:
 	// https://github.com/firecracker-microvm/firecracker-containerd/issues/214
@@ -193,22 +212,57 @@ func (dh driveHandler) MountDrive(ctx context.Context, req *drivemount.MountDriv
 	)
 
 	for i := 0; i < maxRetries; i++ {
-		err := mount.All([]mount.Mount{{
-			Source:  drive.Path(),
-			Type:    req.FilesytemType,
-			Options: req.Options,
-		}}, req.DestinationPath)
-		if err == nil {
-			return &types.Empty{}, nil
-		}
+		if slices.Contains(req.Options, "_rw_overlay") {
+			overlayidx := slices.Index(req.Options, "_rw_overlay")
+			req.Options = slices.Delete(req.Options, overlayidx, overlayidx + 1)
+			err := mount.All([]mount.Mount{{
+				Source:  drive.Path(),
+				Type:    req.FilesytemType,
+				Options: req.Options,
+			}}, filepath.Join("/_overlay", drive.Path(), "lower"))
+			
+			if err != nil {
+				if isRetryableMountError(err) {
+					logger.WithError(err).Warnf("retryable failure mounting drive")
+					time.Sleep(retryDelay)
+					continue
+				} else {
+					return nil, fmt.Errorf("non-retryable failure mounting drive from %q to %q: %w", drive.Path(), req.DestinationPath, err)
+				}
+			}
 
-		if isRetryableMountError(err) {
-			logger.WithError(err).Warnf("retryable failure mounting drive")
-			time.Sleep(retryDelay)
-			continue
-		}
+			err = mount.All([]mount.Mount{{
+				Source:  req.DestinationPath,
+				Type:    "overlay",
+				Options: []string{
+					"lowerdir="+filepath.Join("/_overlay", drive.Path(), "lower"),
+					"upperdir="+filepath.Join("/_overlay", drive.Path(), "upper"),
+					"workdir="+filepath.Join("/_overlay", drive.Path(), "work")},
+			}}, req.DestinationPath)
 
-		return nil, fmt.Errorf("non-retryable failure mounting drive from %q to %q: %w", drive.Path(), req.DestinationPath, err)
+			if err == nil {
+				return &types.Empty{}, nil
+			}
+
+			return nil, fmt.Errorf("non-retryable failure mounting overlay drive from %q to %q: %w", drive.Path(), req.DestinationPath, err)
+		} else {
+			err := mount.All([]mount.Mount{{
+				Source:  drive.Path(),
+				Type:    req.FilesytemType,
+				Options: req.Options,
+			}}, req.DestinationPath)
+
+			if err == nil {
+				return &types.Empty{}, nil
+			}
+
+			if isRetryableMountError(err) {
+				logger.WithError(err).Warnf("retryable failure mounting drive")
+				time.Sleep(retryDelay)
+				continue
+			}
+			return nil, fmt.Errorf("non-retryable failure mounting drive from %q to %q: %w", drive.Path(), req.DestinationPath, err)
+		}
 	}
 
 	return nil, fmt.Errorf("exhausted retries mounting drive from %q to %q", drive.Path(), req.DestinationPath)
