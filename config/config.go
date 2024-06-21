@@ -51,6 +51,7 @@ type Config struct {
 	// the VM will default to using the network interfaces as specified here. This is especially
 	// useful when a CNI-based network interface is provided in DefaultNetworkInterfaces.
 	DefaultNetworkInterfaces []proto.FirecrackerNetworkInterface `json:"default_network_interfaces"`
+	DriveMounts              []proto.FirecrackerDriveMount       `json:"drive_mounts"`
 	// ShimBaseDir is the base directory which shim dirs will be created for each
 	// VM. In addition to this if jailing is enabled the jail will also use this
 	// directory.
