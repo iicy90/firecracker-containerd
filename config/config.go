@@ -29,6 +29,7 @@ const (
 	// overwrite the default runtime config path
 	ConfigPathEnvName  = "FIRECRACKER_CONTAINERD_RUNTIME_CONFIG_PATH"
 	defaultConfigPath  = "/etc/containerd/firecracker-runtime.json"
+	vmConfigDir        = "/tmp/firecracker-runtime"
 	defaultKernelArgs  = "console=ttyS0 noapic reboot=k panic=1 pci=off nomodules rw"
 	defaultFilesPath   = "/var/lib/firecracker-containerd/runtime/"
 	defaultKernelPath  = defaultFilesPath + "default-vmlinux.bin"
@@ -45,12 +46,15 @@ type Config struct {
 	KernelArgs            string   `json:"kernel_args"`
 	RootDrive             string   `json:"root_drive"`
 	CPUTemplate           string   `json:"cpu_template"`
+	VcpuCount             int64    `json:"vcpu_count"`
+	MemSizeMib            int64    `json:"mem_size_mib"`
 	LogLevels             []string `json:"log_levels"`
 	SmtEnabled            bool     `json:"smt_enabled"`
 	// If a CreateVM call specifies no network interfaces and DefaultNetworkInterfaces is non-empty,
 	// the VM will default to using the network interfaces as specified here. This is especially
 	// useful when a CNI-based network interface is provided in DefaultNetworkInterfaces.
 	DefaultNetworkInterfaces []proto.FirecrackerNetworkInterface `json:"default_network_interfaces"`
+	DriveMounts              []proto.FirecrackerDriveMount       `json:"drive_mounts"`
 	// ShimBaseDir is the base directory which shim dirs will be created for each
 	// VM. In addition to this if jailing is enabled the jail will also use this
 	// directory.
@@ -69,17 +73,13 @@ type JailerConfig struct {
 
 // LoadConfig loads configuration from JSON file at 'path'
 func LoadConfig(path string) (*Config, error) {
-	if path == "" {
-		path = os.Getenv(ConfigPathEnvName)
-	}
-
-	if path == "" {
-		path = defaultConfigPath
-	}
-
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(vmConfigDir + "/" + path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config from %q: %w", path, err)
+		fmt.Errorf("failed to read config from %q: %w", vmConfigDir + "/" + path, err)
+		data, err = os.ReadFile(defaultConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read config from %q: %w", defaultConfigPath, err)
+		}
 	}
 
 	cfg := &Config{

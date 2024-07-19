@@ -33,8 +33,8 @@ const (
 func machineConfigurationFromProto(cfg *config.Config, req *proto.FirecrackerMachineConfiguration) models.MachineConfiguration {
 	config := models.MachineConfiguration{
 		CPUTemplate: models.CPUTemplate(cfg.CPUTemplate),
-		VcpuCount:   firecracker.Int64(defaultCPUCount),
-		MemSizeMib:  firecracker.Int64(defaultMemSizeMb),
+		VcpuCount:   firecracker.Int64(cfg.VcpuCount),
+		MemSizeMib:  firecracker.Int64(cfg.MemSizeMib),
 		Smt:         firecracker.Bool(cfg.SmtEnabled),
 	}
 
