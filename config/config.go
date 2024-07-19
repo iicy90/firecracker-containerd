@@ -29,6 +29,7 @@ const (
 	// overwrite the default runtime config path
 	ConfigPathEnvName  = "FIRECRACKER_CONTAINERD_RUNTIME_CONFIG_PATH"
 	defaultConfigPath  = "/etc/containerd/firecracker-runtime.json"
+	vmConfigDir        = "/tmp/firecracker-runtime"
 	defaultKernelArgs  = "console=ttyS0 noapic reboot=k panic=1 pci=off nomodules rw"
 	defaultFilesPath   = "/var/lib/firecracker-containerd/runtime/"
 	defaultKernelPath  = defaultFilesPath + "default-vmlinux.bin"
@@ -45,6 +46,8 @@ type Config struct {
 	KernelArgs            string   `json:"kernel_args"`
 	RootDrive             string   `json:"root_drive"`
 	CPUTemplate           string   `json:"cpu_template"`
+	VcpuCount             int64    `json:"vcpu_count"`
+	MemSizeMib            int64    `json:"mem_size_mib"`
 	LogLevels             []string `json:"log_levels"`
 	SmtEnabled            bool     `json:"smt_enabled"`
 	// If a CreateVM call specifies no network interfaces and DefaultNetworkInterfaces is non-empty,
@@ -70,17 +73,13 @@ type JailerConfig struct {
 
 // LoadConfig loads configuration from JSON file at 'path'
 func LoadConfig(path string) (*Config, error) {
-	if path == "" {
-		path = os.Getenv(ConfigPathEnvName)
-	}
-
-	if path == "" {
-		path = defaultConfigPath
-	}
-
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(vmConfigDir + "/" + path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config from %q: %w", path, err)
+		fmt.Errorf("failed to read config from %q: %w", vmConfigDir + "/" + path, err)
+		data, err = os.ReadFile(defaultConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read config from %q: %w", defaultConfigPath, err)
+		}
 	}
 
 	cfg := &Config{

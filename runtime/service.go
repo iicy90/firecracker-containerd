@@ -170,7 +170,7 @@ func shimOpts(shimCtx context.Context) (*shim.Opts, error) {
 
 // NewService creates new runtime shim.
 func NewService(shimCtx context.Context, id string, remotePublisher shim.Publisher, shimCancel func()) (shim.Shim, error) {
-	cfg, err := config.LoadConfig("")
+	cfg, err := config.LoadConfig(id)
 	if err != nil {
 		return nil, err
 	}
@@ -378,11 +378,16 @@ func (s *service) StartShim(shimCtx context.Context, opts shim.StartOpts) (strin
 	for i := range s.config.DriveMounts {
 		driveMountPtrs[i] = &s.config.DriveMounts[i]
 	}
+	machineCfgs := proto.FirecrackerMachineConfiguration{
+		VcpuCount:  uint32(s.config.VcpuCount),
+		MemSizeMib: uint32(s.config.MemSizeMib),
+	}
 	_, err = fcControlClient.CreateVM(shimCtx, &proto.CreateVMRequest{
 		VMID:                     s.vmID,
 		ExitAfterAllTasksDeleted: exitAfterAllTasksDeleted,
 		ContainerCount:           int32(containerCount),
 		DriveMounts:              driveMountPtrs,
+		MachineCfg:               &machineCfgs,
 	})
 	if err != nil {
 		errStatus, ok := status.FromError(err)
